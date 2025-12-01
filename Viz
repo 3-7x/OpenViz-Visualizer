@@ -1,0 +1,1311 @@
+-- hi hi
+-- its ai so what?
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local player = Players.LocalPlayer
+local mouse = player:GetMouse()
+local character = player.Character or player.CharacterAdded:Wait()
+
+-- ==============================================================================
+-- [CORE LOGIC & VARIABLES]
+-- ==============================================================================
+
+-- State
+local orbiting = false
+local tracked = {} 
+local idxCounter = 0
+
+-- Lock System
+local lookLocked = false 
+
+-- Target System
+local targetPlayer = player 
+local isSelectingTarget = false
+
+-- Audio Visualizer
+local audioVisualizerEnabled = true
+local maxRadiusBoost = 8
+local smoothingFactor = 0.15
+local currentRadiusBoost = 0
+local loudnessThreshold = 50
+
+-- Dynamic Controls
+local currentSpeed = 2
+local currentSize = 5
+local currentHeight = 3 
+
+-- User config
+local netlessEnabled = true 
+local netlessVector = Vector3.new(14.5, 14.5, 14.5) 
+
+-- [PRESETS] - Filtered List
+local orbitPresets = {
+    ["Rolling Circle (H)"] = {radius=5, speed=2, circleH=true, rolling=true},
+    ["Circle (H)"] = {radius=5, speed=2, circleH=true},
+    ["Circle (V)"] = {radius=5, speed=2, circleV=true},
+    ["Spiral"] = {radius=5, speed=2}, 
+    ["Square Box"] = {radius=5, speed=2, square=true}, 
+    ["Triangle"] = {radius=5, speed=2, triangle=true}, 
+    ["Pentagon"] = {radius=5, speed=2, pentagon=true}, 
+    ["Bouncy Circle"] = {radius=4, speed=1, crown=true}, 
+    ["Fibonacci Disk (whos fibonacci gng😂)"] = {radius=0.5, speed=2, fibonacci=true}, 
+    ["Wall"] = {radius=3, speed=0, grid=true},
+    ["Line"] = {radius=2, speed=3, line=true}, 
+    ["Heart"] = {radius=4, speed=1.5, heart=true}, 
+    ["Star"] = {radius=5, speed=2, star=true}, 
+    ["Orbit Atom"] = {radius=6, speed=3, orbitAtom=true}, 
+    ["Sphere"] = {radius=5, speed=1, sphere=true},
+    ["Hourglass"] = {radius=4, speed=2, hourglass=true},
+    ["Pyramid"] = {radius=5, speed=1.5, pyramid=true},
+    ["Saturn (doesnt look like it but ok)"] = {radius=7, speed=2, saturn=true},
+    ["Snake"] = {radius=5, speed=3, snake=true},
+    -- ["Black Hole"] REMOVED in previous step
+    ["Solar System"] = {radius=2, speed=1, solar=true},
+    ["Twister"] = {radius=4.5, speed=1.2, twist=true},
+    ["Infinity (Top)"] = {radius=5, speed=2, infinity=true, offset="top", yOffset=8, spinSpeed=0.5},
+    ["Double Ring"] = {radius=6, speed=1.2, doubleRing=true, tiltAngle=math.rad(30)},
+    ["dih"] = {theThing=true, radius=1.2, speed=0, baseDistance=0.2}, 
+    ["Tail"] = {tail=true, radius=1.5, speed=0, baseDistance=1.5, firstToolDistance=0.8},
+    -- ["DNA Helix"] REMOVED in previous step
+    -- ["Atomic"] REMOVED in previous step
+    -- ["Shield Wall"] REMOVED in previous step
+    -- ["Vortex"] REMOVED in previous step
+    ["Chaos Messy"] = {radius=6, speed=5, chaos=true}, 
+    ["Pendulum"] = {radius=5, speed=2, pendulum=true},
+    ["Fountain"] = {radius=2, speed=2, fountain=true},
+    ["Flower"] = {radius=5, speed=1, flower=true},
+    ["Cage (that aint a cage bud)"] = {radius=5, speed=1, cage=true},
+    ["Wings V1 (Linear)"] = {radius=1, speed=2, wings=true}, 
+    ["Wings V2 (Fluid)"] = {radius=1, speed=2, wingsV2=true}, 
+    ["Wings V3 (Curved)"] = {radius=1, speed=2, wingsV3=true},
+    ["Arc Tail"] = {radius=8, speed=1, arcTail=true}, 
+    ["Cat Tail Maybe"] = {radius=4, speed=2, catTail=true}, 
+    ["dih V2"] = {theThing=true, radius=1.2, speed=0, baseDistance=0.2, rotationOffset=math.rad(90)},
+}
+
+local activePresetName = "Circle (H)"
+local activePreset = orbitPresets[activePresetName]
+
+-- Initialize variables
+currentSpeed = activePreset.speed or 2
+currentSize = activePreset.radius or 5
+
+-- ==============================================================================
+-- [UI CONSTRUCTION] - From "orbit new gui"
+-- ==============================================================================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "OrbitUI_Compact_Fixed"
+ScreenGui.Parent = player:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+
+-- > Style Config
+local UIConfig = {
+    MainColor = Color3.fromRGB(25, 25, 30),
+    AccentColor = Color3.fromRGB(85, 170, 255),
+    GlassTransparency = 0.15,
+    Font = Enum.Font.GothamMedium,
+    FontBold = Enum.Font.GothamBold,
+}
+
+local function createCorner(p, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r or 8)
+    c.Parent = p
+    return c
+end
+
+local function createStroke(p, color, thick)
+    local s = Instance.new("UIStroke")
+    s.Color = color or Color3.fromRGB(255,255,255)
+    s.Transparency = 0.85
+    s.Thickness = thick or 1
+    s.Parent = p
+    return s
+end
+
+-- > Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 400, 0, 360) 
+MainFrame.Position = UDim2.new(0.5, -200, 0.5, -180)
+MainFrame.BackgroundColor3 = UIConfig.MainColor
+MainFrame.BackgroundTransparency = UIConfig.GlassTransparency
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true 
+MainFrame.Parent = ScreenGui
+createCorner(MainFrame, 12)
+createStroke(MainFrame, UIConfig.AccentColor, 1.5)
+
+-- > Dragging
+local dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragInput = false end
+        end)
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        if dragInput then update(input) end
+    end
+end)
+
+-- > Title Bar
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 40)
+TitleBar.BackgroundTransparency = 1
+TitleBar.Parent = MainFrame
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Text = "<font color='rgb(100,200,255)'>OpenViz</font>"
+TitleLabel.RichText = true
+TitleLabel.Size = UDim2.new(1, -40, 1, 0)
+TitleLabel.Position = UDim2.new(0, 15, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Font = UIConfig.FontBold
+TitleLabel.TextColor3 = Color3.new(1,1,1)
+TitleLabel.TextSize = 16
+TitleLabel.Parent = TitleBar
+
+-- > Container for Tabs & Pages
+local BodyContainer = Instance.new("Frame")
+BodyContainer.Name = "BodyContainer"
+BodyContainer.Size = UDim2.new(1, 0, 1, -40)
+BodyContainer.Position = UDim2.new(0, 0, 0, 40)
+BodyContainer.BackgroundTransparency = 1
+BodyContainer.ClipsDescendants = true
+BodyContainer.Parent = MainFrame
+
+-- > Minimize Logic
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+MinimizeBtn.Position = UDim2.new(1, -35, 0, 5)
+MinimizeBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+MinimizeBtn.BackgroundTransparency = 0.95
+MinimizeBtn.Text = "-"
+MinimizeBtn.TextColor3 = Color3.new(1,1,1)
+MinimizeBtn.Font = UIConfig.FontBold
+MinimizeBtn.TextSize = 18
+MinimizeBtn.Parent = TitleBar
+createCorner(MinimizeBtn, 6)
+
+local isMin = false
+MinimizeBtn.MouseButton1Click:Connect(function()
+    isMin = not isMin
+    if isMin then
+        BodyContainer.Visible = false
+        TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 400, 0, 40), BackgroundTransparency = 0}):Play()
+    else
+        TweenService:Create(MainFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quart), {Size = UDim2.new(0, 400, 0, 360), BackgroundTransparency = UIConfig.GlassTransparency}):Play()
+        task.wait(0.2)
+        BodyContainer.Visible = true
+    end
+end)
+
+-- > Tabs
+local TabContainer = Instance.new("Frame")
+TabContainer.Size = UDim2.new(1, -24, 0, 35)
+TabContainer.Position = UDim2.new(0, 12, 0, 0)
+TabContainer.BackgroundTransparency = 1
+TabContainer.Parent = BodyContainer
+
+local function createTabBtn(text, posScale)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.5, -4, 1, 0)
+    btn.Position = UDim2.new(posScale, posScale > 0 and 4 or 0, 0, 0)
+    btn.BackgroundColor3 = Color3.new(0,0,0)
+    btn.BackgroundTransparency = 0.6
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(150,150,150)
+    btn.Font = UIConfig.FontBold
+    btn.TextSize = 13
+    btn.Parent = TabContainer
+    createCorner(btn, 6)
+    return btn
+end
+
+local PlayerTabBtn = createTabBtn("PLAYER", 0)
+local VisualizerTabBtn = createTabBtn("Visualizer", 0.5)
+
+-- > Content Area
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Size = UDim2.new(1, -24, 1, -45)
+ContentFrame.Position = UDim2.new(0, 12, 0, 45)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.ClipsDescendants = true
+ContentFrame.Parent = BodyContainer
+
+local PlayerPage = Instance.new("Frame")
+PlayerPage.Size = UDim2.new(1, 0, 1, 0)
+PlayerPage.BackgroundTransparency = 1
+PlayerPage.Parent = ContentFrame
+
+local VisualizerPage = Instance.new("Frame")
+VisualizerPage.Size = UDim2.new(1, 0, 1, 0)
+VisualizerPage.Position = UDim2.new(1, 0, 0, 0)
+VisualizerPage.BackgroundTransparency = 1
+VisualizerPage.Parent = ContentFrame
+
+local activeTab = "Player"
+local function switchTab(tabName)
+    if activeTab == tabName then return end
+    activeTab = tabName
+    
+    local showColor = Color3.fromRGB(255,255,255)
+    local dimColor = Color3.fromRGB(150,150,150)
+    
+    if tabName == "Player" then
+        TweenService:Create(PlayerTabBtn, TweenInfo.new(0.3), {TextColor3 = showColor, BackgroundTransparency = 0.4}):Play()
+        TweenService:Create(VisualizerTabBtn, TweenInfo.new(0.3), {TextColor3 = dimColor, BackgroundTransparency = 0.6}):Play()
+        TweenService:Create(PlayerPage, TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.new(0,0,0,0)}):Play()
+        TweenService:Create(VisualizerPage, TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.new(1,0,0,0)}):Play()
+    else
+        TweenService:Create(PlayerTabBtn, TweenInfo.new(0.3), {TextColor3 = dimColor, BackgroundTransparency = 0.6}):Play()
+        TweenService:Create(VisualizerTabBtn, TweenInfo.new(0.3), {TextColor3 = showColor, BackgroundTransparency = 0.4}):Play()
+        TweenService:Create(PlayerPage, TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.new(-1,0,0,0)}):Play()
+        TweenService:Create(VisualizerPage, TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Position = UDim2.new(0,0,0,0)}):Play()
+    end
+end
+
+PlayerTabBtn.MouseButton1Click:Connect(function() switchTab("Player") end)
+VisualizerTabBtn.MouseButton1Click:Connect(function() switchTab("Visualizer") end)
+switchTab("Player") 
+
+-- ==============================================================================
+-- [PLAYER PAGE ELEMENTS]
+-- ==============================================================================
+
+local function createToggleBtn(parent, text, yPos, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 45) 
+    btn.Position = UDim2.new(0, 0, 0, yPos)
+    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    btn.Text = "   " .. text
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.TextXAlignment = Enum.TextXAlignment.Left
+    btn.Font = UIConfig.Font
+    btn.TextSize = 14
+    btn.Parent = parent
+    createCorner(btn, 6)
+    
+    local status = Instance.new("Frame")
+    status.Size = UDim2.new(0, 12, 0, 12) 
+    status.Position = UDim2.new(1, -25, 0.5, -6)
+    status.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    status.Parent = btn
+    createCorner(status, 6)
+    
+    local toggled = false
+    btn.MouseButton1Click:Connect(function()
+        toggled = not toggled
+        if toggled then
+            TweenService:Create(status, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(50, 255, 100)}):Play()
+        else
+            TweenService:Create(status, TweenInfo.new(0.2), {BackgroundColor3 = Color3.fromRGB(255, 50, 50)}):Play()
+        end
+        callback(toggled, btn)
+    end)
+    return btn, status
+end
+
+-- 1. Main Start Button
+local StartBtn = Instance.new("TextButton")
+StartBtn.Size = UDim2.new(1, 0, 0, 32)
+StartBtn.Position = UDim2.new(0, 0, 0, 0)
+StartBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
+StartBtn.Text = "Visualize"
+StartBtn.Font = UIConfig.FontBold
+StartBtn.TextSize = 13
+StartBtn.TextColor3 = Color3.new(1,1,1)
+StartBtn.Parent = PlayerPage
+createCorner(StartBtn, 8)
+createStroke(StartBtn, Color3.new(1,1,1), 1)
+
+-- 2. Target Section
+local TargetFrame = Instance.new("Frame")
+TargetFrame.Size = UDim2.new(1, 0, 0, 75)
+TargetFrame.Position = UDim2.new(0, 0, 0, 42)
+TargetFrame.BackgroundColor3 = Color3.new(0,0,0)
+TargetFrame.BackgroundTransparency = 0.7
+TargetFrame.Parent = PlayerPage
+createCorner(TargetFrame, 6)
+
+local TargetInput = Instance.new("TextBox")
+TargetInput.Size = UDim2.new(0.65, -5, 0, 32)
+TargetInput.Position = UDim2.new(0, 5, 0, 5)
+TargetInput.BackgroundColor3 = Color3.fromRGB(40,40,50)
+TargetInput.Text = ""
+TargetInput.PlaceholderText = "Username..."
+TargetInput.TextColor3 = Color3.new(1,1,1)
+TargetInput.Font = UIConfig.Font
+TargetInput.TextSize = 12
+TargetInput.Parent = TargetFrame
+createCorner(TargetInput, 6)
+
+local SelectNameBtn = Instance.new("TextButton")
+SelectNameBtn.Size = UDim2.new(0.35, -10, 0, 32)
+SelectNameBtn.Position = UDim2.new(0.65, 5, 0, 5)
+SelectNameBtn.BackgroundColor3 = UIConfig.AccentColor
+SelectNameBtn.Text = "SET"
+SelectNameBtn.TextColor3 = Color3.new(1,1,1)
+SelectNameBtn.Font = UIConfig.FontBold
+SelectNameBtn.TextSize = 11
+SelectNameBtn.Parent = TargetFrame
+createCorner(SelectNameBtn, 6)
+
+local MouseSelectBtn = Instance.new("TextButton")
+MouseSelectBtn.Size = UDim2.new(1, -10, 0, 28)
+MouseSelectBtn.Position = UDim2.new(0, 5, 0, 42)
+MouseSelectBtn.BackgroundColor3 = Color3.fromRGB(60,60,70)
+MouseSelectBtn.Text = "CLICK TO SELECT (Current: Self)"
+MouseSelectBtn.TextColor3 = Color3.fromRGB(200,200,200)
+MouseSelectBtn.Font = UIConfig.Font
+MouseSelectBtn.TextSize = 12
+MouseSelectBtn.Parent = TargetFrame
+createCorner(MouseSelectBtn, 6)
+
+-- 3. Toggles
+local NetlessBtn, NetlessStatus = createToggleBtn(PlayerPage, "Enable Netless", 125, function(s) 
+    netlessEnabled = s 
+end)
+NetlessStatus.BackgroundColor3 = Color3.fromRGB(50, 255, 100) 
+
+local LockViewBtn, LockStatus = createToggleBtn(PlayerPage, "Lock View To Hrp", 175, function(s)
+    lookLocked = s
+end)
+
+-- 4. Mass Play
+local MassPlayFrame = Instance.new("Frame")
+MassPlayFrame.Size = UDim2.new(1, 0, 0, 40)
+MassPlayFrame.Position = UDim2.new(0, 0, 0, 230)
+MassPlayFrame.BackgroundColor3 = Color3.fromRGB(25,25,30)
+MassPlayFrame.BackgroundTransparency = 0.5
+MassPlayFrame.Parent = PlayerPage 
+createCorner(MassPlayFrame, 6)
+
+local SongIDBox = Instance.new("TextBox")
+SongIDBox.Size = UDim2.new(0.7, -5, 1, 0)
+SongIDBox.Position = UDim2.new(0, 0, 0, 0)
+SongIDBox.BackgroundColor3 = Color3.fromRGB(30,30,40)
+SongIDBox.PlaceholderText = "Sound ID"
+SongIDBox.Text = ""
+SongIDBox.TextColor3 = Color3.new(1,1,1)
+SongIDBox.Font = UIConfig.Font
+SongIDBox.TextSize = 12
+SongIDBox.Parent = MassPlayFrame
+createCorner(SongIDBox, 6)
+
+local PlayBtn = Instance.new("TextButton")
+PlayBtn.Size = UDim2.new(0.28, 0, 1, 0)
+PlayBtn.Position = UDim2.new(0.7, 5, 0, 0)
+PlayBtn.BackgroundColor3 = Color3.fromRGB(180, 100, 50)
+PlayBtn.Text = "Mass Play"
+PlayBtn.TextColor3 = Color3.new(1,1,1)
+PlayBtn.Font = UIConfig.FontBold
+PlayBtn.TextSize = 12
+PlayBtn.Parent = MassPlayFrame
+createCorner(PlayBtn, 6)
+
+-- ==============================================================================
+-- [VISUALIZER PAGE ELEMENTS]
+-- ==============================================================================
+
+local function updateParamUI()
+    SpeedInp.Text = tostring(currentSpeed)
+    SizeInp.Text = tostring(currentSize)
+    HeightInp.Text = tostring(currentHeight)
+end
+
+local ControlsContainer = Instance.new("Frame")
+ControlsContainer.Size = UDim2.new(1, 0, 0, 60)
+ControlsContainer.BackgroundTransparency = 1
+ControlsContainer.Parent = VisualizerPage
+
+local function createParamInput(name, xScale, defaultVal, callback)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(0.32, 0, 1, 0)
+    frame.Position = UDim2.new(xScale, 0, 0, 0)
+    frame.BackgroundColor3 = Color3.fromRGB(30,30,40)
+    frame.Parent = ControlsContainer
+    createCorner(frame, 6)
+    
+    local input -- forward declaration
+    
+    local function changeValue(delta)
+        local n = tonumber(input.Text) or defaultVal
+        n = n + delta
+        input.Text = string.format("%.1f", n)
+        callback(n)
+    end
+    
+    local minusBtn = Instance.new("TextButton")
+    minusBtn.Size = UDim2.new(0, 20, 0, 20)
+    minusBtn.Position = UDim2.new(0, 4, 0, 2)
+    minusBtn.BackgroundColor3 = Color3.fromRGB(50, 40, 40)
+    minusBtn.Text = "-"
+    minusBtn.TextColor3 = Color3.new(1,1,1)
+    minusBtn.Font = UIConfig.FontBold
+    minusBtn.Parent = frame
+    createCorner(minusBtn, 4)
+
+    local plusBtn = Instance.new("TextButton")
+    plusBtn.Size = UDim2.new(0, 20, 0, 20)
+    plusBtn.Position = UDim2.new(1, -24, 0, 2)
+    plusBtn.BackgroundColor3 = Color3.fromRGB(40, 50, 40)
+    plusBtn.Text = "+"
+    plusBtn.TextColor3 = Color3.new(1,1,1)
+    plusBtn.Font = UIConfig.FontBold
+    plusBtn.Parent = frame
+    createCorner(plusBtn, 4)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Text = name
+    lbl.Size = UDim2.new(1, -48, 0, 24)
+    lbl.Position = UDim2.new(0, 24, 0, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.TextColor3 = Color3.fromRGB(150,150,150)
+    lbl.Font = UIConfig.FontBold
+    lbl.TextSize = 9
+    lbl.Parent = frame
+    
+    input = Instance.new("TextBox")
+    input.Size = UDim2.new(1, -10, 0, 25)
+    input.Position = UDim2.new(0, 5, 0, 28)
+    input.BackgroundColor3 = Color3.fromRGB(20,20,25)
+    input.Text = tostring(defaultVal)
+    input.TextColor3 = UIConfig.AccentColor
+    input.Font = UIConfig.FontBold
+    input.TextSize = 14
+    input.Parent = frame
+    createCorner(input, 4)
+    
+    input.FocusLost:Connect(function()
+        local n = tonumber(input.Text)
+        if n then callback(n) else input.Text = string.format("%.1f", defaultVal) end
+    end)
+    
+    minusBtn.MouseButton1Click:Connect(function() changeValue(-0.5) end)
+    plusBtn.MouseButton1Click:Connect(function() changeValue(0.5) end)
+    
+    return input
+end
+
+SpeedInp = createParamInput("SPEED", 0, currentSpeed, function(v) currentSpeed = v end)
+SizeInp = createParamInput("SIZE", 0.34, currentSize, function(v) currentSize = v end)
+HeightInp = createParamInput("HEIGHT", 0.68, currentHeight, function(v) currentHeight = v end)
+
+-- Audio Toggle & Display
+local AudioBtn, AudioStatus = createToggleBtn(VisualizerPage, "   Audio Visualization", 70, function(s)
+    audioVisualizerEnabled = s
+    if not s then currentRadiusBoost = 0 end
+end)
+AudioBtn.Size = UDim2.new(0.5, 0, 0, 40)
+AudioStatus.BackgroundColor3 = Color3.fromRGB(50, 255, 100)
+
+local AudioInfoFrame = Instance.new("Frame")
+AudioInfoFrame.Size = UDim2.new(0.48, 0, 0, 40)
+AudioInfoFrame.Position = UDim2.new(0.52, 0, 0, 70)
+AudioInfoFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+AudioInfoFrame.Parent = VisualizerPage
+createCorner(AudioInfoFrame, 6)
+
+local AudioInfo = Instance.new("TextLabel")
+AudioInfo.Size = UDim2.new(1, 0, 1, 0)
+AudioInfo.BackgroundTransparency = 1
+AudioInfo.Text = "Vol: 0"
+AudioInfo.TextColor3 = Color3.fromRGB(100, 255, 180)
+AudioInfo.Font = UIConfig.FontBold
+AudioInfo.TextSize = 12
+AudioInfo.Parent = AudioInfoFrame
+
+-- Preset Scroller
+local PresetLabel = Instance.new("TextLabel")
+PresetLabel.Text = "PRESETS"
+PresetLabel.Size = UDim2.new(1, 0, 0, 20)
+PresetLabel.Position = UDim2.new(0, 0, 0, 120)
+PresetLabel.BackgroundTransparency = 1
+PresetLabel.TextColor3 = Color3.fromRGB(200,200,200)
+PresetLabel.Font = UIConfig.FontBold
+PresetLabel.TextSize = 11
+PresetLabel.TextXAlignment = Enum.TextXAlignment.Left
+PresetLabel.Parent = VisualizerPage
+
+local Scroll = Instance.new("ScrollingFrame")
+Scroll.Size = UDim2.new(1, 0, 1, -145)
+Scroll.Position = UDim2.new(0, 0, 0, 145)
+Scroll.BackgroundTransparency = 1
+Scroll.ScrollBarThickness = 3
+Scroll.ScrollBarImageColor3 = UIConfig.AccentColor
+Scroll.Parent = VisualizerPage
+
+local GridLayout = Instance.new("UIGridLayout")
+GridLayout.CellSize = UDim2.new(0.48, 0, 0, 32)
+GridLayout.CellPadding = UDim2.new(0, 8, 0, 8)
+GridLayout.Parent = Scroll
+
+local function populatePresets()
+    for _, c in pairs(Scroll:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+    
+    local keys = {}
+    for k in pairs(orbitPresets) do table.insert(keys, k) end
+    table.sort(keys)
+    
+    for _, name in ipairs(keys) do
+        local btn = Instance.new("TextButton")
+        btn.Text = name
+        btn.BackgroundColor3 = (name == activePresetName) and UIConfig.AccentColor or Color3.fromRGB(40,40,50)
+        btn.TextColor3 = Color3.new(1,1,1)
+        btn.Font = UIConfig.Font
+        btn.TextSize = 11
+        btn.Parent = Scroll
+        createCorner(btn, 6)
+        
+        btn.MouseButton1Click:Connect(function()
+            activePresetName = name
+            activePreset = orbitPresets[name]
+            currentSpeed = activePreset.speed or 2 
+            currentSize = activePreset.radius or 5
+            updateParamUI()
+            populatePresets() 
+        end)
+    end
+    
+    local rows = math.ceil(#keys / 2)
+    Scroll.CanvasSize = UDim2.new(0, 0, 0, rows * 40)
+end
+populatePresets()
+
+-- ==============================================================================
+-- [PHYSICS & LOGIC] - REPLACED WITH FILE 2 LOGIC
+-- ==============================================================================
+
+local function safePcall(fn, ...) return pcall(fn, ...) end
+local function countTracked() local n=0; for _ in pairs(tracked) do n=n+1 end; return n end
+
+local function getMaxLoudness()
+    local maxLoudness = 0
+    for tool, data in pairs(tracked) do
+        if data.handle then
+            for _, descendant in ipairs(tool:GetDescendants()) do
+                if descendant:IsA("Sound") and descendant.IsPlaying then
+                    local loudness = descendant.PlaybackLoudness or 0
+                    if loudness > maxLoudness then maxLoudness = loudness end
+                end
+            end
+        end
+    end
+    return maxLoudness
+end
+
+local function setupMovers(handle)
+    local bp = Instance.new("BodyPosition")
+    local bg = Instance.new("BodyGyro")
+    bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+    bp.Position = handle.Position
+    bp.P = 40000 
+    bp.D = 500   
+    bp.Parent = handle
+    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+    bg.CFrame = handle.CFrame
+    bg.P = 30000
+    bg.D = 500   
+    bg.Parent = handle
+    return bp, bg
+end
+
+local function trackTool(tool)
+    if not tool or not tool:IsA("Tool") then return end
+    if tracked[tool] then return end
+    local handle = tool:FindFirstChild("Handle")
+    if not handle then return end
+    idxCounter = idxCounter + 1
+    safePcall(function()
+        handle.Massless = true
+        handle.CanCollide = false
+        handle.AssemblyLinearVelocity = Vector3.new(0,4,0)
+    end)
+    local bp, bg = setupMovers(handle)
+    tracked[tool] = {
+        handle = handle, bp = bp, bg = bg, index = idxCounter, netlessAllowed = false, startTime = tick()
+    }
+    task.delay(0.2, function() if tracked[tool] then tracked[tool].netlessAllowed = true end end)
+end
+
+local function untrackAndDestroy(tool)
+    local data = tracked[tool]
+    if not data then return end
+    safePcall(function()
+        if data.bp then data.bp:Destroy() end
+        if data.bg then data.bg:Destroy() end
+        if data.handle then data.handle.AssemblyLinearVelocity = Vector3.new(0,4,0) end
+    end)
+    tracked[tool] = nil
+end
+
+local function setToolAnim(id)
+    if not character then return end
+    local animScript = character:FindFirstChild("Animate")
+    if animScript then
+        local toolNone = animScript:FindFirstChild("toolnone")
+        if toolNone then
+             local anim = toolNone:FindFirstChild("ToolNoneAnim")
+            if anim then anim.AnimationId = id end
+        end
+    end
+end
+
+-- > MATH FUNCTION REPLACEMENT (Fixes Offset)
+local function computeTargetPos(index, t, hrp)
+    local preset = activePreset
+    local i = index or 1
+    local total = math.max(1, countTracked())
+    
+    local baseVal = (preset.radius or 5)
+    if baseVal == 0 then baseVal = 1 end
+    local radiusMultiplier = 1 + (currentRadiusBoost / baseVal)
+    
+    if preset.circleH then
+        local radius = currentSize * radiusMultiplier
+        local spacingAngle = (2 * math.pi / total) * (i - 1)
+        local angle = t * currentSpeed + spacingAngle
+        local offset = Vector3.new(math.cos(angle)*radius, 0, math.sin(angle)*radius)
+        return hrp.CFrame:PointToWorldSpace(offset + Vector3.new(0, currentHeight, 0)) 
+
+    elseif preset.circleV then
+        local radius = currentSize * radiusMultiplier
+        local spacingAngle = (2 * math.pi / total) * (i - 1)
+        local angle = t * currentSpeed + spacingAngle
+        local x = math.cos(angle) * radius
+        local y = math.sin(angle) * radius + currentHeight
+        local localOffset = Vector3.new(x, y, 0)
+        return hrp.CFrame:PointToWorldSpace(localOffset)
+    
+    elseif preset.square then
+        local sides = 4
+        local spacingAngle = (2 * math.pi / total) * (i - 1)
+        local angle = t * currentSpeed + spacingAngle
+        local r_base = math.cos(math.pi/sides) / math.cos((angle % (2*math.pi/sides)) - (math.pi/sides))
+        local r = currentSize * radiusMultiplier * r_base
+        local x = math.cos(angle) * r
+        local z = math.sin(angle) * r
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight, z))
+
+    elseif preset.triangle then
+        local sides = 3
+        local spacingAngle = (2 * math.pi / total) * (i - 1)
+        local angle = t * currentSpeed + spacingAngle
+        local r_base = math.cos(math.pi/sides) / math.cos((angle % (2*math.pi/sides)) - (math.pi/sides))
+        local r = currentSize * radiusMultiplier * r_base
+        local x = math.cos(angle) * r
+        local z = math.sin(angle) * r
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight, z))
+
+    elseif preset.pentagon then
+        local sides = 5
+        local spacingAngle = (2 * math.pi / total) * (i - 1)
+        local angle = t * currentSpeed + spacingAngle
+        local r_base = math.cos(math.pi/sides) / math.cos((angle % (2*math.pi/sides)) - (math.pi/sides))
+        local r = currentSize * radiusMultiplier * r_base
+        local x = math.cos(angle) * r
+        local z = math.sin(angle) * r
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight, z))
+
+    elseif preset.fibonacci then
+        local goldenAngle = 2.39996
+        local theta = i * goldenAngle + (t * currentSpeed * 0.2) 
+        local r = (currentSize * 0.5) * math.sqrt(i) * radiusMultiplier 
+        local x = math.cos(theta) * r
+        local z = math.sin(theta) * r
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight, z))
+
+    elseif preset.crown then
+        local radius = currentSize * radiusMultiplier
+        local angle = (2 * math.pi / total) * (i - 1) + (t * currentSpeed)
+        local spikes = 5
+        local spikeHeight = 2
+        local yWave = math.abs(math.sin(angle * spikes * 0.5)) * spikeHeight
+        local x = math.cos(angle) * radius
+        local z = math.sin(angle) * radius
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight + yWave + 2, z)) 
+
+    elseif preset.grid then
+        local cols = math.ceil(math.sqrt(total))
+        local row = math.floor((i-1) / cols)
+        local col = (i-1) % cols
+        local spacing = currentSize * 0.5
+        local x = (col - cols/2) * spacing
+        local y = (row * spacing) + currentHeight - 2
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, 0)) 
+
+    elseif preset.line then
+        local spacing = (currentSize * 0.4) + (audioVisualizerEnabled and (currentRadiusBoost * 0.2) or 0)
+        local centerOffset = (i - (total / 2) - 0.5) * spacing
+        local waveHeight = 1.5
+        local waveSpeed = currentSpeed
+        local waveVal = math.sin((t * waveSpeed) + (i * 0.5)) * waveHeight
+        local x = centerOffset
+        local y = waveVal + currentHeight
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, 0)) 
+
+    elseif preset.heart then
+         local angle = (i / total) * math.pi * 2 + (t * currentSpeed * 0.5)
+         local x = 16 * math.pow(math.sin(angle), 3)
+         local y = 13 * math.cos(angle) - 5 * math.cos(2 * angle) - 2 * math.cos(3 * angle) - math.cos(4 * angle)
+         local scale = currentSize * 0.05 * radiusMultiplier
+         x = x * scale
+         y = y * scale + currentHeight
+         return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, 0)) 
+
+    elseif preset.star then
+        local angle = (i / total) * math.pi * 2 + (t * currentSpeed)
+        local r = currentSize * radiusMultiplier * (1 + 0.3 * math.sin(5 * angle))
+        local x = math.cos(angle) * r
+        local y = math.sin(angle) * r + currentHeight
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, 0)) 
+    
+    elseif preset.orbitAtom then
+        local shell = (i % 3) + 1
+        local r = currentSize * shell * 0.5
+        local spd = currentSpeed / shell
+        local angle = t * spd + i
+        local rx, ry, rz = 0,0,0
+        if shell == 1 then rx=r*math.cos(angle); rz=r*math.sin(angle)
+        elseif shell == 2 then rx=r*math.cos(angle); ry=r*math.sin(angle)
+        else ry=r*math.cos(angle); rz=r*math.sin(angle) end
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(rx, ry+currentHeight, rz))
+
+    elseif preset.sphere then
+        local radius = currentSize * radiusMultiplier
+        local phi = math.acos(1 - 2 * (i / total))
+        local theta = math.pi * (1 + math.sqrt(5)) * i
+        local x = radius * math.sin(phi) * math.cos(theta + t*currentSpeed)
+        local y = radius * math.sin(phi) * math.sin(theta + t*currentSpeed) + currentHeight
+        local z = radius * math.cos(phi)
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, z))
+
+    elseif preset.hourglass then
+        local radius = currentSize * radiusMultiplier
+        local h = (i / total) * 2 - 1 
+        local r = (math.abs(h) * radius) + 1 
+        local angle = t * currentSpeed + (i * 0.5)
+        local x = r * math.cos(angle)
+        local z = r * math.sin(angle)
+        local y = h * 5 + currentHeight
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, z))
+
+    elseif preset.pyramid then
+        local levels = 5
+        local level = math.ceil(i / (total/levels))
+        local r = currentSize * radiusMultiplier * (1 - (level/levels))
+        local y = (level * 1.5) + currentHeight - 2
+        local angle = t * currentSpeed + i
+        local x = r * math.cos(angle)
+        local z = r * math.sin(angle)
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, z))
+
+    elseif preset.saturn then
+        local isRing = i > (total * 0.2) 
+        if isRing then
+            local radius = (currentSize + 3) * radiusMultiplier
+            local angle = (i * 0.5) + (t * currentSpeed)
+            local x = radius * math.cos(angle)
+            local z = radius * math.sin(angle)
+            return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight, z))
+        else
+            local radius = (currentSize * 0.5) * radiusMultiplier
+            local angle = (i * 2) + (t * currentSpeed * 2)
+            local x = radius * math.cos(angle)
+            local y = radius * math.sin(angle) + currentHeight
+            return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, 0))
+        end
+
+    elseif preset.snake then
+        local r = currentSize * radiusMultiplier
+        local angle = (t * currentSpeed) + (i * 0.2)
+        local heightOffset = math.sin(angle * 2) * 2 
+        local x = r * math.cos(angle)
+        local z = r * math.sin(angle)
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight + heightOffset, z))
+
+    elseif preset.blackhole then
+        local maxR = currentSize * radiusMultiplier * 2
+        local progress = (t * currentSpeed * 0.2 + (i/total)) % 1
+        local r = maxR * (1-progress)
+        local angle = t * currentSpeed * 5 + (i * 0.5)
+        local x = r * math.cos(angle)
+        local z = r * math.sin(angle)
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight - 3, z)) 
+
+    elseif preset.solar then
+        local r = (i * 0.8) * (currentSize/3) * radiusMultiplier
+        local spd = currentSpeed / i * 5 
+        local angle = t * spd + i
+        local x = r * math.cos(angle)
+        local z = r * math.sin(angle)
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight, z))
+
+    elseif preset.twist then
+        local layerSpeed = currentSpeed - 0.05*(i-1)
+        local radius = (currentSize + i*0.25) * radiusMultiplier
+        local y = currentHeight + i * 0.25
+        local angle = t * layerSpeed + i*0.3
+        return hrp.Position + Vector3.new(math.cos(angle)*radius, y, math.sin(angle)*radius)
+        
+    elseif preset.infinity and preset.offset == "top" then
+        local radius = currentSize * radiusMultiplier
+        local outerAngle = t * (preset.spinSpeed or 0.5)
+        local loopAngle = t*currentSpeed + i*0.3
+        local x = radius * math.sin(loopAngle)
+        local z = radius * math.sin(loopAngle) * math.cos(loopAngle)
+        local y = preset.yOffset or (currentHeight + 5)
+        local rotated = CFrame.Angles(0, outerAngle, 0)
+        return hrp.Position + (rotated * Vector3.new(x, y, z))
+      
+    elseif preset.doubleRing then
+        local radius = currentSize * radiusMultiplier
+        local ringSpeed = currentSpeed
+        local tilt = preset.tiltAngle or math.rad(30)
+        local half = math.ceil(total/2)
+        local angle = t*ringSpeed + ((i-1)%half) * (2*math.pi/half)
+        local y = currentHeight + 0.25
+        if i <= half then
+            return hrp.Position + Vector3.new(math.cos(angle)*radius, y, math.sin(angle)*radius)
+        else
+            local x = math.cos(angle)*radius
+            local z = math.sin(angle)*radius
+            local rotated = CFrame.Angles(tilt,0,0) * CFrame.new(x,y,z)
+            return hrp.Position + rotated.Position
+        end
+    
+    -- The Thing (Fixes Offset by using hrp.Position)
+    elseif preset.theThing then
+        local spacing = currentSize + (audioVisualizerEnabled and (currentRadiusBoost * 0.2) or 0)
+        local baseDist = preset.baseDistance or 0.5
+        local lookDir = hrp.CFrame.LookVector
+        local totalDist = baseDist + (i * spacing)
+        local yOffset = (i == 1) and (currentHeight - .7) or currentHeight
+        return hrp.Position + (lookDir * totalDist) + Vector3.new(0, yOffset, 0)
+    
+    -- Tail (Fixes Offset)
+    elseif preset.tail then
+        local baseDistance = currentSize 
+        local firstDist = preset.firstToolDistance or 0.5
+        local audioBoost = audioVisualizerEnabled and (currentRadiusBoost * 0.2) or 0
+        local backDir = -hrp.CFrame.LookVector
+        local spacing = baseDistance + audioBoost
+        local distance = firstDist + ((i - 1) * spacing)
+        return hrp.Position + backDir * distance + Vector3.new(0, currentHeight - 2, 0)
+    
+    elseif preset.chaos then
+        local r = currentSize * radiusMultiplier
+        local spd = currentSpeed
+        local x = math.sin(t * spd + i) * r
+        local y = math.cos(t * spd * 0.8 + i * 2) * r + currentHeight
+        local z = math.sin(t * spd * 1.2 + i * 0.5) * r
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, z))
+
+    elseif preset.pendulum then
+        local length = currentSize + 2
+        local swingAngle = math.sin(t * currentSpeed) * 1.5 
+        local offsetAngle = (i / total) * 0.5 
+        local finalAngle = swingAngle + offsetAngle - 0.25
+        local x = math.sin(finalAngle) * length
+        local y = -math.cos(finalAngle) * length + currentHeight + length
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, -3))
+        
+    elseif preset.fountain then
+        local progress = (t * currentSpeed * 0.5 + (i/total)) % 1
+        local h = progress * 10 
+        local r = math.sin(progress * math.pi) * currentSize * radiusMultiplier * 2
+        local angle = i + (t * 2)
+        local x = r * math.cos(angle)
+        local z = r * math.sin(angle)
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight + h - 2, z))
+
+    elseif preset.flower then
+        local angle = (i/total) * math.pi * 2
+        local petal = math.sin(angle * 5 + t * currentSpeed) 
+        local r = (currentSize * radiusMultiplier) + (petal * 2)
+        local x = r * math.cos(angle + t)
+        local z = r * math.sin(angle + t)
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight, z))
+
+    elseif preset.cage then
+        local r = currentSize * radiusMultiplier
+        local angle = (i / total) * math.pi * 2 + (t * currentSpeed * 0.5)
+        local x = r * math.cos(angle)
+        local z = r * math.sin(angle)
+        local y = currentHeight + math.sin(t + i) * 0.5 
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, z))
+
+    elseif preset.wings then
+        -- WINGS V1 (Original/Linear)
+        local total = math.max(1, countTracked())
+        local half = math.ceil(total / 2)
+        local isRightWing = i > half
+        local wingIndex = isRightWing and (i - half) or i
+        local xDir = isRightWing and 1 or -1
+        local zAnchor = 0.25 
+        
+        if wingIndex == 1 then
+            local startX = 1.2 * xDir
+            return hrp.CFrame:PointToWorldSpace(Vector3.new(startX, currentHeight, zAnchor))
+        else
+            local spacingX = currentSize * 0.5
+            local spacingY = currentSize * 0.25
+            local swingVal = math.sin(t * currentSpeed * 1.5)
+            local swingMag = (preset.swingMagnitude or 1) * (wingIndex * 0.3)
+            local x = (1.2 * xDir) + (xDir * (wingIndex - 1) * spacingX)
+            local y = currentHeight + ((wingIndex - 1) * spacingY) + (swingVal * swingMag)
+            local z = zAnchor + (wingIndex * 0.05) 
+            return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, z))
+        end
+        
+    elseif preset.wingsV2 then
+        -- WINGS V2 (Fluid)
+        local total = math.max(1, countTracked())
+        local half = math.ceil(total / 2)
+        local isRightWing = i > half
+        local wingIndex = isRightWing and (i - half) or i
+        local xDir = isRightWing and 1 or -1
+        local zAnchor = 1.0 
+        
+        if wingIndex == 1 then
+            local startX = 1.2 * xDir
+            return hrp.CFrame:PointToWorldSpace(Vector3.new(startX, currentHeight, zAnchor))
+        else
+            local spacingX = currentSize * 0.5
+            local spacingY = currentSize * 0.25
+            local wavePhase = (t * currentSpeed * 2) - (wingIndex * 0.5)
+            local swingValY = math.sin(wavePhase) * (0.2 + wingIndex * 0.12) 
+            local swingValZ = math.cos(wavePhase) * (0.05 + wingIndex * 0.01) 
+            local x = (1.2 * xDir) + (xDir * (wingIndex - 1) * spacingX)
+            local y = currentHeight + ((wingIndex - 1) * spacingY) + swingValY
+            local z = zAnchor + (wingIndex * 0.1) + swingValZ
+            return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, z))
+        end
+
+    elseif preset.wingsV3 then
+        -- WINGS V3 (Curved)
+        local total = math.max(1, countTracked())
+        local half = math.ceil(total / 2)
+        local isRightWing = i > half
+        local wingIndex = isRightWing and (i - half) or i
+        local xDir = isRightWing and 1 or -1
+        local zAnchor = 1.4
+        
+        if wingIndex == 1 then
+            local startX = 1.2 * xDir
+            return hrp.CFrame:PointToWorldSpace(Vector3.new(startX, currentHeight, zAnchor))
+        else
+            local spacingX = currentSize * 0.4 
+            local shapeCurve = math.sin(wingIndex * 0.4) * 2.5 
+            local wavePhase = (t * currentSpeed * 2) - (wingIndex * 0.4)
+            local swingValY = math.sin(wavePhase) * (0.5 + wingIndex * 0.3)
+            local x = (1.2 * xDir) + (xDir * (wingIndex - 1) * spacingX)
+            local y = currentHeight + shapeCurve + swingValY
+            local z = zAnchor + math.abs(math.sin(wingIndex * 0.2)) * 1.5 
+            return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, z))
+        end
+
+    elseif preset.arcTail then
+        local total = math.max(1, countTracked())
+        local progress = i / total
+        local zBase = preset.baseOffset or 0.7
+        local z = zBase + (progress * currentSize * 1.8)
+        local yCurve = math.pow(progress, 2.5) * currentSize * 2
+        local y = currentHeight - 2 + yCurve
+        local xSway = math.sin(t * currentSpeed * 0.5 + progress) * 0.5
+        local x = xSway
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, z))
+
+elseif preset.catTail then
+        local total = math.max(1, countTracked())
+        local progress = i / total
+        local spacingZ = currentSize * 0.3 
+        local z = 0.25 + (i * spacingZ)
+        local yCurve = math.pow(progress, 1.5) * (currentSize * 0.8) 
+        local y = currentHeight - 2 + yCurve
+        local x = 0 
+        if i > 1 then
+            local swaySpeed = currentSpeed * 2.5
+            local swayFreq = 0.6 
+            local swayAmp = (i - 1) * 0.2 
+            if swayAmp > 1.5 then swayAmp = 1.5 end
+            x = math.sin(t * swaySpeed - (i * swayFreq)) * swayAmp
+        end
+        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, y, z))
+
+    else
+        local radius = currentSize * radiusMultiplier
+        local y = currentHeight + i*0.25
+        local angle = t*currentSpeed + i*0.5
+        return hrp.Position + Vector3.new(math.cos(angle)*radius, y, math.sin(angle)*radius)
+    end
+end
+
+local function getTargetLookPos(index, hrp)
+    if lookLocked then
+        return hrp.Position
+    end
+    local preset = activePreset
+    if preset.theThing or preset.tail or preset.arcTail or preset.catTail or preset.shield or preset.line or preset.grid or preset.wall or preset.wings or preset.wingsV2 or preset.wingsV3 then 
+        return hrp.Position + hrp.CFrame.LookVector * 50
+    end
+    return nil 
+end
+
+-- > Start Button Logic (Fixed to reset idxCounter)
+StartBtn.MouseButton1Click:Connect(function()
+    orbiting = not orbiting
+    if orbiting then
+        -- STARTING
+        idxCounter = 0 -- FIX: Reset counter on start!
+        StartBtn.Text = "Stop Visualizing"
+        StartBtn.BackgroundColor3 = Color3.fromRGB(160, 40, 40)
+        setToolAnim("rbxassetid://0") 
+        local char = player.Character
+        local hum = char and char:FindFirstChild("Humanoid")
+        for _, tool in ipairs(player:WaitForChild("Backpack"):GetChildren()) do
+            if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
+                tool.Parent = char; tool.Parent = player.Backpack; if hum then tool.Parent = hum end; tool.Parent = char
+                local grip = tool:FindFirstChild("RightGrip"); if grip then pcall(function() grip:Destroy() end) end
+                trackTool(tool)
+            end
+        end
+        for _, tool in ipairs(character:GetChildren()) do
+            if tool:IsA("Tool") and tool:FindFirstChild("Handle") then trackTool(tool) end
+        end
+    else
+        -- STOPPING
+        idxCounter = 0 -- FIX: Reset counter on stop too.
+        StartBtn.Text = "Visualize"
+        StartBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
+        setToolAnim("rbxassetid://182393478") 
+        for tool, _ in pairs(tracked) do untrackAndDestroy(tool) end
+        tracked = {}
+    end
+end)
+
+-- Events
+character.ChildAdded:Connect(function(c) if orbiting and c:IsA("Tool") then task.wait(0.05); trackTool(c) end end)
+character.ChildRemoved:Connect(function(c) if tracked[c] then untrackAndDestroy(c) end end)
+player.CharacterAdded:Connect(function(char)
+    character = char
+    targetPlayer = player
+    MouseSelectBtn.Text = "CLICK TO SELECT (Current: Self)"
+    for tool, _ in pairs(tracked) do untrackAndDestroy(tool) end
+    tracked = {}
+    idxCounter = 0
+    task.wait(0.1)
+end)
+
+-- Target Logic
+SelectNameBtn.MouseButton1Click:Connect(function()
+    local text = TargetInput.Text
+    if text == "" then return end
+    local found = nil
+    for _, p in ipairs(Players:GetPlayers()) do
+        if string.find(string.lower(p.Name), string.lower(text)) or string.find(string.lower(p.DisplayName), string.lower(text)) then
+            found = p
+            break
+        end
+    end
+    if found then
+        targetPlayer = found
+        isSelectingTarget = false
+        MouseSelectBtn.Text = "TARGET: " .. found.Name
+        SelectNameBtn.Text = "FOUND"
+        task.delay(1, function() SelectNameBtn.Text = "SET" end)
+        TargetInput.Text = ""
+    else
+        SelectNameBtn.Text = "N/A"
+        task.delay(1, function() SelectNameBtn.Text = "SET" end)
+    end
+end)
+
+MouseSelectBtn.MouseButton1Click:Connect(function()
+    if targetPlayer ~= player then
+        targetPlayer = player
+        isSelectingTarget = false
+        MouseSelectBtn.Text = "CLICK TO SELECT (Current: Self)"
+        MouseSelectBtn.BackgroundColor3 = Color3.fromRGB(60,60,70)
+    else
+        if isSelectingTarget then
+            isSelectingTarget = false
+            MouseSelectBtn.Text = "CLICK TO SELECT (Current: Self)"
+            MouseSelectBtn.BackgroundColor3 = Color3.fromRGB(60,60,70)
+        else
+            isSelectingTarget = true
+            MouseSelectBtn.Text = "CLICK A PLAYER..."
+            MouseSelectBtn.BackgroundColor3 = Color3.fromRGB(150,100,0)
+        end
+    end
+end)
+
+mouse.Button1Down:Connect(function()
+    if isSelectingTarget then
+        local target = mouse.Target
+        if target and target.Parent then
+            local char = target.Parent
+            local hum = char:FindFirstChild("Humanoid")
+            if not hum then
+                char = target.Parent.Parent
+                hum = char and char:FindFirstChild("Humanoid")
+            end
+            if hum and char then
+                local pl = Players:GetPlayerFromCharacter(char)
+                if pl then
+                    targetPlayer = pl
+                    isSelectingTarget = false
+                    MouseSelectBtn.Text = "TARGET: " .. pl.Name
+                    MouseSelectBtn.BackgroundColor3 = Color3.fromRGB(120,40,40)
+                end
+            end
+        end
+    end
+end)
+
+-- Mass Play
+PlayBtn.MouseButton1Click:Connect(function()
+    local songId = tonumber(SongIDBox.Text)
+    if not songId then return end
+    local count = 0
+    for _, tool in ipairs(player.Character:GetChildren()) do
+        if tool:IsA("Tool") and tool:FindFirstChild("Remote") then
+            tool.Remote:FireServer("PlaySong", songId)
+            count = count + 1
+        end
+    end
+    PlayBtn.Text = "SENT: " .. count
+    task.wait(1)
+    PlayBtn.Text = "Mass Play"
+end)
+
+-- > Main Loop (Logic from File 2)
+RunService.Heartbeat:Connect(function(dt)
+    if not orbiting then return end
+    character = player.Character
+    if not character then return end
+    
+    -- Target
+    local targetChar = nil
+    if targetPlayer and targetPlayer.Parent then
+        targetChar = targetPlayer.Character
+    else
+        targetPlayer = player
+        MouseSelectBtn.Text = "CLICK TO SELECT (Current: Self)"
+        targetChar = player.Character
+    end
+    local hrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+    local hum = targetChar and targetChar:FindFirstChild("Humanoid")
+    if not hrp or (hum and hum.Health <= 0) then
+        if targetPlayer ~= player then
+            targetPlayer = player
+            MouseSelectBtn.Text = "CLICK TO SELECT (Current: Self)"
+            targetChar = player.Character
+            hrp = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+        else
+            return 
+        end
+    end
+    if not hrp then return end
+
+    local t = tick()
+    
+    if audioVisualizerEnabled then
+        local maxLoudness = getMaxLoudness()
+        local normalizedLoudness = 0
+        if maxLoudness > loudnessThreshold then
+            normalizedLoudness = math.min((maxLoudness - loudnessThreshold) / (500 - loudnessThreshold), 1)
+        end
+        local targetBoost = normalizedLoudness * maxRadiusBoost
+        currentRadiusBoost = currentRadiusBoost + (targetBoost - currentRadiusBoost) * smoothingFactor
+        -- Update UI Indicator
+        AudioInfo.Text = string.format("Vol: %.0f | Boost: %.1f", maxLoudness, currentRadiusBoost)
+    else
+        currentRadiusBoost = 0
+        AudioInfo.Text = "Audio Disabled"
+    end
+
+    for tool, data in pairs(tracked) do
+        local handle, bp, bg, i = data.handle, data.bp, data.bg, data.index
+        if not (handle and handle.Parent) then untrackAndDestroy(tool); end
+
+        safePcall(function() handle.Massless = true; handle.CanCollide = false end)
+        if netlessEnabled and data.netlessAllowed then
+            safePcall(function() handle.AssemblyLinearVelocity = netlessVector end)
+        end
+        safePcall(function() handle.AssemblyAngularVelocity = Vector3.new(0,3,0) end)
+
+        local targetPos = computeTargetPos(i, t, hrp)
+        
+        -- Rotation Calculation
+        local targetRot
+        local targetLookPos = getTargetLookPos(i, hrp)
+        
+        if activePreset.rotationOffset and i > 1 then
+            local offsetCFrame = CFrame.Angles(0, 0, activePreset.rotationOffset)
+            if targetLookPos then 
+                targetRot = CFrame.new(targetPos, targetLookPos) * offsetCFrame
+            else
+                targetRot = CFrame.new(targetPos, hrp.Position) * offsetCFrame
+            end
+        else
+            if targetLookPos then targetRot = CFrame.new(targetPos, targetLookPos) else targetRot = CFrame.new(targetPos, hrp.Position) end
+        end
+        
+        if (t - data.startTime) < 1.0 then
+             handle.CFrame = targetRot
+             handle.AssemblyLinearVelocity = Vector3.new(0,4,0)
+             if bp then bp.Position = targetPos end
+             if bg then bg.CFrame = targetRot end
+        else
+            safePcall(function()
+                if bp then 
+                    bp.Position = targetPos 
+                    if activePresetName == "Tail" or activePresetName == "The Thing" or activePresetName == "The Thing V2" or activePresetName == "Cat Tail (Sway)" then
+                        local dragFactor = math.min(i, 20)
+                        bp.P = math.max(3000, 20000 - (dragFactor * 600)) 
+                        bp.D = 400 + (dragFactor * 10) 
+                    else
+                        bp.P = 25000 
+                        bp.D = 500 
+                    end
+                end
+                if bg then
+                    local targetC = targetRot
+                    if activePreset.rolling and not lookLocked and not activePreset.wings and not activePreset.wingsV2 and not activePreset.wingsV3 then 
+                        targetC = CFrame.new(targetPos, hrp.Position)
+                        local dist = (targetPos - hrp.Position).Magnitude
+                        local rollAmount = dist * 0.85
+                        targetC = targetC * CFrame.Angles(rollAmount, 0, 0)
+                    end
+
+                    if lookLocked then
+                        bg.D = 0 
+                        bg.P = 50000
+                        bg.CFrame = targetC 
+                    else
+                        bg.D = 500
+                        bg.P = 100000 
+                        local alpha = (activePresetName == "Tail" or activePresetName == "The Thing" or activePresetName == "The Thing V2") and 0.1 or 0.5
+                        bg.CFrame = bg.CFrame:Lerp(targetC, alpha)
+                    end
+                end
+            end)
+        end
+    end
+end)
