@@ -1,5 +1,4 @@
 -- hi hi
--- its ai so what?
 game:GetService("TextChatService"):WaitForChild("TextChannels"):WaitForChild("RBXGeneral"):SendAsync("OpenViz")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
