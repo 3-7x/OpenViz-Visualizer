@@ -40,7 +40,7 @@ local currentHeight = 3
 local netlessEnabled = true 
 local netlessVector = Vector3.new(14.5, 14.5, 14.5) 
 
--- [PRESETS] - Filtered List
+-- [PRESETS] 
 local orbitPresets = {
     ["Rolling Circle (H)"] = {radius=5, speed=2, circleH=true, rolling=true},
     ["Circle (H)"] = {radius=5, speed=2, circleH=true},
@@ -50,7 +50,7 @@ local orbitPresets = {
     ["Triangle"] = {radius=5, speed=2, triangle=true}, 
     ["Pentagon"] = {radius=5, speed=2, pentagon=true}, 
     ["Bouncy Circle"] = {radius=4, speed=1, crown=true}, 
-    ["Fibonacci Disk (whos fibonacci gng😂)"] = {radius=0.5, speed=2, fibonacci=true}, 
+    ["Fibonacci Disk"] = {radius=0.5, speed=2, fibonacci=true}, 
     ["Wall"] = {radius=3, speed=0, grid=true},
     ["Line"] = {radius=2, speed=3, line=true}, 
     ["Heart"] = {radius=4, speed=1.5, heart=true}, 
@@ -59,24 +59,19 @@ local orbitPresets = {
     ["Sphere"] = {radius=5, speed=1, sphere=true},
     ["Hourglass"] = {radius=4, speed=2, hourglass=true},
     ["Pyramid"] = {radius=5, speed=1.5, pyramid=true},
-    ["Saturn (doesnt look like it but ok)"] = {radius=7, speed=2, saturn=true},
+    ["Saturn"] = {radius=7, speed=2, saturn=true},
     ["Snake"] = {radius=5, speed=3, snake=true},
-    -- ["Black Hole"] REMOVED in previous step
     ["Solar System"] = {radius=2, speed=1, solar=true},
     ["Twister"] = {radius=4.5, speed=1.2, twist=true},
     ["Infinity (Top)"] = {radius=5, speed=2, infinity=true, offset="top", yOffset=8, spinSpeed=0.5},
     ["Double Ring"] = {radius=6, speed=1.2, doubleRing=true, tiltAngle=math.rad(30)},
     ["dih"] = {theThing=true, radius=1.2, speed=0, baseDistance=0.2}, 
     ["Tail"] = {tail=true, radius=1.5, speed=0, baseDistance=1.5, firstToolDistance=0.8},
-    -- ["DNA Helix"] REMOVED in previous step
-    -- ["Atomic"] REMOVED in previous step
-    -- ["Shield Wall"] REMOVED in previous step
-    -- ["Vortex"] REMOVED in previous step
     ["Chaos Messy"] = {radius=6, speed=5, chaos=true}, 
     ["Pendulum"] = {radius=5, speed=2, pendulum=true},
     ["Fountain"] = {radius=2, speed=2, fountain=true},
     ["Flower"] = {radius=5, speed=1, flower=true},
-    ["Cage (that aint a cage bud)"] = {radius=5, speed=1, cage=true},
+    ["Cage"] = {radius=5, speed=1, cage=true},
     ["Wings V1 (Linear)"] = {radius=1, speed=2, wings=true}, 
     ["Wings V2 (Fluid)"] = {radius=1, speed=2, wingsV2=true}, 
     ["Wings V3 (Curved)"] = {radius=1, speed=2, wingsV3=true},
@@ -93,11 +88,11 @@ currentSpeed = activePreset.speed or 2
 currentSize = activePreset.radius or 5
 
 -- ==============================================================================
--- [UI CONSTRUCTION] - From "orbit new gui"
+-- [UI CONSTRUCTION]
 -- ==============================================================================
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "OrbitUI_Compact_Fixed"
+ScreenGui.Name = "OrbitUI_Compact_CF"
 ScreenGui.Parent = player:WaitForChild("PlayerGui")
 ScreenGui.ResetOnSpawn = false
 
@@ -168,7 +163,7 @@ TitleBar.BackgroundTransparency = 1
 TitleBar.Parent = MainFrame
 
 local TitleLabel = Instance.new("TextLabel")
-TitleLabel.Text = "<font color='rgb(100,200,255)'>OpenViz</font>"
+TitleLabel.Text = "<font color='rgb(100,200,255)'>OpenViz (CF)</font>"
 TitleLabel.RichText = true
 TitleLabel.Size = UDim2.new(1, -40, 1, 0)
 TitleLabel.Position = UDim2.new(0, 15, 0, 0)
@@ -588,7 +583,7 @@ end
 populatePresets()
 
 -- ==============================================================================
--- [PHYSICS & LOGIC] - REPLACED WITH FILE 2 LOGIC
+-- [PHYSICS & LOGIC] - CFRAME CONVERSION
 -- ==============================================================================
 
 local function safePcall(fn, ...) return pcall(fn, ...) end
@@ -609,21 +604,7 @@ local function getMaxLoudness()
     return maxLoudness
 end
 
-local function setupMovers(handle)
-    local bp = Instance.new("BodyPosition")
-    local bg = Instance.new("BodyGyro")
-    bp.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-    bp.Position = handle.Position
-    bp.P = 40000 
-    bp.D = 500   
-    bp.Parent = handle
-    bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
-    bg.CFrame = handle.CFrame
-    bg.P = 30000
-    bg.D = 500   
-    bg.Parent = handle
-    return bp, bg
-end
+-- [MOVED] Removed BodyPosition/BodyGyro setups
 
 local function trackTool(tool)
     if not tool or not tool:IsA("Tool") then return end
@@ -636,9 +617,13 @@ local function trackTool(tool)
         handle.CanCollide = false
         handle.AssemblyLinearVelocity = Vector3.new(0,4,0)
     end)
-    local bp, bg = setupMovers(handle)
+    
+    -- Removed BodyMover creation
     tracked[tool] = {
-        handle = handle, bp = bp, bg = bg, index = idxCounter, netlessAllowed = false, startTime = tick()
+        handle = handle, 
+        index = idxCounter, 
+        netlessAllowed = false, 
+        startTime = tick()
     }
     task.delay(0.2, function() if tracked[tool] then tracked[tool].netlessAllowed = true end end)
 end
@@ -647,9 +632,8 @@ local function untrackAndDestroy(tool)
     local data = tracked[tool]
     if not data then return end
     safePcall(function()
-        if data.bp then data.bp:Destroy() end
-        if data.bg then data.bg:Destroy() end
-        if data.handle then data.handle.AssemblyLinearVelocity = Vector3.new(0,4,0) end
+        -- Reset velocity to normal
+        if data.handle then data.handle.AssemblyLinearVelocity = Vector3.new(0,0,0) end
     end)
     tracked[tool] = nil
 end
@@ -666,7 +650,7 @@ local function setToolAnim(id)
     end
 end
 
--- > MATH FUNCTION REPLACEMENT (Fixes Offset)
+-- > POSITION CALCULATION
 local function computeTargetPos(index, t, hrp)
     local preset = activePreset
     local i = index or 1
@@ -839,15 +823,6 @@ local function computeTargetPos(index, t, hrp)
         local z = r * math.sin(angle)
         return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight + heightOffset, z))
 
-    elseif preset.blackhole then
-        local maxR = currentSize * radiusMultiplier * 2
-        local progress = (t * currentSpeed * 0.2 + (i/total)) % 1
-        local r = maxR * (1-progress)
-        local angle = t * currentSpeed * 5 + (i * 0.5)
-        local x = r * math.cos(angle)
-        local z = r * math.sin(angle)
-        return hrp.CFrame:PointToWorldSpace(Vector3.new(x, currentHeight - 3, z)) 
-
     elseif preset.solar then
         local r = (i * 0.8) * (currentSize/3) * radiusMultiplier
         local spd = currentSpeed / i * 5 
@@ -881,7 +856,7 @@ local function computeTargetPos(index, t, hrp)
         local angle = t*ringSpeed + ((i-1)%half) * (2*math.pi/half)
         local y = currentHeight + 0.25
         if i <= half then
-            return hrp.Position + Vector3.new(math.cos(angle)*radius, y, math.sin(angle)*radius)
+             return hrp.Position + Vector3.new(math.cos(angle)*radius, y, math.sin(angle)*radius)
         else
             local x = math.cos(angle)*radius
             local z = math.sin(angle)*radius
@@ -889,7 +864,6 @@ local function computeTargetPos(index, t, hrp)
             return hrp.Position + rotated.Position
         end
     
-    -- The Thing (Fixes Offset by using hrp.Position)
     elseif preset.theThing then
         local spacing = currentSize + (audioVisualizerEnabled and (currentRadiusBoost * 0.2) or 0)
         local baseDist = preset.baseDistance or 0.5
@@ -898,7 +872,6 @@ local function computeTargetPos(index, t, hrp)
         local yOffset = (i == 1) and (currentHeight - .7) or currentHeight
         return hrp.Position + (lookDir * totalDist) + Vector3.new(0, yOffset, 0)
     
-    -- Tail (Fixes Offset)
     elseif preset.tail then
         local baseDistance = currentSize 
         local firstDist = preset.firstToolDistance or 0.5
@@ -1067,12 +1040,12 @@ local function getTargetLookPos(index, hrp)
     return nil 
 end
 
--- > Start Button Logic (Fixed to reset idxCounter)
+-- > Start Button Logic
 StartBtn.MouseButton1Click:Connect(function()
     orbiting = not orbiting
     if orbiting then
         -- STARTING
-        idxCounter = 0 -- FIX: Reset counter on start!
+        idxCounter = 0 
         StartBtn.Text = "Stop Visualizing"
         StartBtn.BackgroundColor3 = Color3.fromRGB(160, 40, 40)
         setToolAnim("rbxassetid://0") 
@@ -1080,8 +1053,11 @@ StartBtn.MouseButton1Click:Connect(function()
         local hum = char and char:FindFirstChild("Humanoid")
         for _, tool in ipairs(player:WaitForChild("Backpack"):GetChildren()) do
             if tool:IsA("Tool") and tool:FindFirstChild("Handle") then
-                tool.Parent = char; tool.Parent = player.Backpack; if hum then tool.Parent = hum end; tool.Parent = char
-                local grip = tool:FindFirstChild("RightGrip"); if grip then pcall(function() grip:Destroy() end) end
+                tool.Parent = char;
+                tool.Parent = player.Backpack; if hum then tool.Parent = hum end;
+                tool.Parent = char
+                local grip = tool:FindFirstChild("RightGrip");
+                if grip then pcall(function() grip:Destroy() end) end
                 trackTool(tool)
             end
         end
@@ -1090,7 +1066,7 @@ StartBtn.MouseButton1Click:Connect(function()
         end
     else
         -- STOPPING
-        idxCounter = 0 -- FIX: Reset counter on stop too.
+        idxCounter = 0
         StartBtn.Text = "Visualize"
         StartBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
         setToolAnim("rbxassetid://182393478") 
@@ -1194,7 +1170,7 @@ PlayBtn.MouseButton1Click:Connect(function()
     PlayBtn.Text = "Mass Play"
 end)
 
--- > Main Loop (Logic from File 2)
+-- > Main Loop (CFrame Implementation)
 RunService.Heartbeat:Connect(function(dt)
     if not orbiting then return end
     character = player.Character
@@ -1233,7 +1209,6 @@ RunService.Heartbeat:Connect(function(dt)
         end
         local targetBoost = normalizedLoudness * maxRadiusBoost
         currentRadiusBoost = currentRadiusBoost + (targetBoost - currentRadiusBoost) * smoothingFactor
-        -- Update UI Indicator
         AudioInfo.Text = string.format("Vol: %.0f | Boost: %.1f", maxLoudness, currentRadiusBoost)
     else
         currentRadiusBoost = 0
@@ -1241,20 +1216,25 @@ RunService.Heartbeat:Connect(function(dt)
     end
 
     for tool, data in pairs(tracked) do
-        local handle, bp, bg, i = data.handle, data.bp, data.bg, data.index
+        local handle, i = data.handle, data.index
         if not (handle and handle.Parent) then untrackAndDestroy(tool); end
 
         safePcall(function() handle.Massless = true; handle.CanCollide = false end)
+        
+        -- Netless (Velocity Keep-Alive)
+        -- Even with CFrame, setting velocity helps replication and prevents physics sleep
         if netlessEnabled and data.netlessAllowed then
             safePcall(function() handle.AssemblyLinearVelocity = netlessVector end)
+        else
+            safePcall(function() handle.AssemblyLinearVelocity = Vector3.zero end)
         end
-        safePcall(function() handle.AssemblyAngularVelocity = Vector3.new(0,3,0) end)
+        safePcall(function() handle.AssemblyAngularVelocity = Vector3.zero end)
 
         local targetPos = computeTargetPos(i, t, hrp)
         
         -- Rotation Calculation
-        local targetRot
         local targetLookPos = getTargetLookPos(i, hrp)
+        local targetRot
         
         if activePreset.rotationOffset and i > 1 then
             local offsetCFrame = CFrame.Angles(0, 0, activePreset.rotationOffset)
@@ -1264,48 +1244,43 @@ RunService.Heartbeat:Connect(function(dt)
                 targetRot = CFrame.new(targetPos, hrp.Position) * offsetCFrame
             end
         else
-            if targetLookPos then targetRot = CFrame.new(targetPos, targetLookPos) else targetRot = CFrame.new(targetPos, hrp.Position) end
+            if targetLookPos then 
+                targetRot = CFrame.new(targetPos, targetLookPos) 
+            else 
+                targetRot = CFrame.new(targetPos, hrp.Position) 
+            end
         end
         
-        if (t - data.startTime) < 1.0 then
-             handle.CFrame = targetRot
-             handle.AssemblyLinearVelocity = Vector3.new(0,4,0)
-             if bp then bp.Position = targetPos end
-             if bg then bg.CFrame = targetRot end
-        else
-            safePcall(function()
-                if bp then 
-                    bp.Position = targetPos 
-                    if activePresetName == "Tail" or activePresetName == "The Thing" or activePresetName == "The Thing V2" or activePresetName == "Cat Tail (Sway)" then
-                        local dragFactor = math.min(i, 20)
-                        bp.P = math.max(3000, 20000 - (dragFactor * 600)) 
-                        bp.D = 400 + (dragFactor * 10) 
-                    else
-                        bp.P = 25000 
-                        bp.D = 500 
-                    end
-                end
-                if bg then
-                    local targetC = targetRot
-                    if activePreset.rolling and not lookLocked and not activePreset.wings and not activePreset.wingsV2 and not activePreset.wingsV3 then 
-                        targetC = CFrame.new(targetPos, hrp.Position)
-                        local dist = (targetPos - hrp.Position).Magnitude
-                        local rollAmount = dist * 0.85
-                        targetC = targetC * CFrame.Angles(rollAmount, 0, 0)
-                    end
-
-                    if lookLocked then
-                        bg.D = 0 
-                        bg.P = 50000
-                        bg.CFrame = targetC 
-                    else
-                        bg.D = 500
-                        bg.P = 100000 
-                        local alpha = (activePresetName == "Tail" or activePresetName == "The Thing" or activePresetName == "The Thing V2") and 0.1 or 0.5
-                        bg.CFrame = bg.CFrame:Lerp(targetC, alpha)
-                    end
-                end
-            end)
+        -- Rolling Modifier
+        if activePreset.rolling and not lookLocked and not activePreset.wings and not activePreset.wingsV2 and not activePreset.wingsV3 then 
+            local dist = (targetPos - hrp.Position).Magnitude
+            local rollAmount = dist * 0.85
+            targetRot = targetRot * CFrame.Angles(rollAmount, 0, 0)
         end
+
+        -- Final CFrame Application with Lerp
+        safePcall(function()
+            local goalCFrame = targetRot
+
+            -- Determine Lerp Alpha based on preset type
+            -- Low alpha = High drag/lag (like Tail)
+            -- High alpha = Snappy/Instant (like Circle)
+            local alpha = 0.5 -- Default smooth
+            
+            if activePresetName == "Tail" or activePresetName == "The Thing" or activePresetName == "The Thing V2" or activePresetName == "Cat Tail Maybe" then
+                alpha = 0.15 -- High lag for tails
+            elseif activePresetName == "Snake" then
+                alpha = 0.25
+            else
+                alpha = 0.825 -- Very responsive for shapes
+            end
+            
+            -- If first second of existence, snap instantly to avoid flying in from nowhere
+            if (t - data.startTime) < 1.0 then
+                handle.CFrame = goalCFrame
+            else
+                handle.CFrame = handle.CFrame:Lerp(goalCFrame, alpha)
+            end
+        end)
     end
 end)
